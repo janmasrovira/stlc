@@ -1,0 +1,14 @@
+name = "stlc"
+version = "0.1.0"
+defaultTargets = ["Stlc"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.21.0"
+
+[leanOptions]
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "Stlc"
