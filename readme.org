@@ -1,4 +1,2 @@
-#+title: Stlc compiler
-
 * Readme
-Stlc
+Simply typed lambda calculus with primitive recursion
