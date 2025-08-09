@@ -75,11 +75,14 @@ inductive Expr : {n : Nat} → (Γ : Context n) → Ty → Type where
 
 mutual
 
-structure Closure (varTy : Ty) (retTy : Ty) where
-  {n : Nat}
-  {Γ : Context n}
-  {env : Env Γ}
-  body : Expr (varTy ▹ Γ) retTy
+inductive Closure : (varTy : Ty) → (retTy : Ty) → Type where
+  | mk
+    {n : Nat}
+    {Γ : Context n}
+    (env : Env Γ)
+    {varTy retTy : Ty}
+    (body : Expr (varTy ▹ Γ) retTy)
+    : Closure varTy retTy
 
 inductive Val : Ty → Type where
   | nat : Nat → Val .Nat
@@ -89,40 +92,70 @@ inductive Val : Ty → Type where
     (cl : Closure varTy retTy)
     : Val (varTy ⟶ retTy)
 
-abbrev Env {n : Nat} (Γ : Context n) : Type := match Γ with
-  | .nil => Unit
-  | .cons ty ctx => Val ty × Env ctx
+inductive Env : {n : Nat} → (Γ : Context n) → Type where
+  | nil : Env .nil
+  | cons
+    {n : Nat}
+    {Γ : Context n}
+    {ty : Ty}
+    (val : Val ty)
+    (env : Env Γ)
+    : Env (ty ▹ Γ)
 
 end
--- def Val.interpNat : Val .Nat → Nat := fun
---   | .nat n => n
 
--- def Env.get
---   {ty : Ty}
---   (env : Env Γ)
---   (var : Var Γ ty)
---   : Val ty :=
---   let ⟨⟨ix, l⟩, p⟩ := var
---   match Γ with
---   | .nil => by contradiction
---   | .cons t ctx =>
---     match ix, env with
---     | 0, (v, _) => p ▸ v
---     | .succ m, (_, env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
+def Val.interpNat : Val .Nat → Nat := fun
+  | .nat n => n
 
--- def eval {n : Nat} {Γ : Context n} {ty : Ty} (env : Env Γ) : Expr Γ ty → Val ty := fun
---   | .zero => .nat 0
---   | .suc e => let .nat m := eval env e
---               .nat (m + 1)
---   | @Expr.lam _ Γ ty bodyTy body => .closure {Γ, body}
---   | .var v => env.get v
---   | .app fn x => let @Val.closure varTy _ c := eval env fn
---                  let x' := eval env x
---                  eval (Γ := varTy ▹ c.Γ) ⟨x', env⟩ c.body
+def Env.get
+  {ty : Ty}
+  (env : Env Γ)
+  (var : Var Γ ty)
+  : Val ty :=
+  let ⟨⟨ix, l⟩, p⟩ := var
+  match Γ with
+  | .nil => by contradiction
+  | .cons t ctx =>
+    match ix, env with
+    | 0, (.cons v _) => p ▸ v
+    | .succ m, (.cons _ env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
 
---                  sorry
---   | .prec z i n =>
---     let z' := eval env z |>.interp
---     let n' := eval env n |>.interp
---     let i' : Nat → ⟦ ty ⟧ → ⟦ ty ⟧ := eval env i |>.interp
---     @Nat.rec (fun _ => ⟦ ty ⟧) z' i' n' |> reify
+def eval
+  {n : Nat}
+  {Γ : Context n}
+  {ty : Ty}
+  (env : Env Γ)
+  (expr : Expr Γ ty)
+  : Val ty :=
+  match expr with
+  | .zero => .nat 0
+  | .suc e => let .nat m := eval env e
+              .nat (m + 1)
+  | @Expr.lam _ Γ ty bodyTy body => .closure ⟨env, body⟩
+  | .var v => env.get v
+  | .app fn x => evalApp env fn x
+  | .prec z i n =>
+    let z' : Val ty := eval env z
+    let i' : Val (Ty.Nat ⟶ ty ⟶ ty) := eval env i
+    let nat : Val Ty.Nat := eval env n
+    let indCase (prevNum : Nat) (prevVal : Val ty) : Val ty :=
+                evalVApp (evalVApp i' (.nat prevNum)) prevVal
+    @Nat.rec (fun _ => Val ty) z' indCase nat.interpNat
+  where
+  evalApp
+    {n : Nat}
+    {Γ : Context n}
+    {ty1 ty2 : Ty}
+    (env : Env Γ)
+    (fn : Expr Γ (ty1 ⟶ ty2))
+    (arg : Expr Γ ty1)
+    : Val ty2 := evalVApp (eval env fn) (eval env arg)
+
+  evalVApp
+    {ty1 ty2 : Ty}
+    (fn : Val (ty1 ⟶ ty2))
+    (arg : Val ty1)
+    : Val ty2 :=
+      let .closure c := fn
+      let @Closure.mk _ _ clEnv _ _ body := c
+      eval (.cons arg clEnv) body
