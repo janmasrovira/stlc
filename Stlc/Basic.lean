@@ -5,6 +5,8 @@ inductive Ty : Type where
   | Fn : Ty → Ty → Ty
   | Nat : Ty
 
+variable (ty : Ty)
+
 infixr:0 " ⟶ " => Ty.Fn
 
 abbrev interp : Ty → Type := fun
@@ -111,9 +113,25 @@ def Env.get
     | 0, (.cons v _) => p ▸ v
     | .succ m, (.cons _ env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
 
+
+def Expr.size (expr :  Expr Γ t) : Nat := match expr with
+  | .zero => 1
+  | .suc e => e.size.succ
+  | .app l r => l.size + r.size
+  | .var _ => 1
+  | .lam l => l.size.succ
+
+mutual
+def Val.size (val : Val t) : Nat := match val with
+  | .nat _ => 1
+  | .closure cenv cbody => cenv.size + cbody.size
+
+def Env.size (env : Env Γ) : Nat := match env with
+  | .nil => 0
+  | .cons v e => v.size + e.size
+end
+
 def eval
-  {n : Nat}
-  {Γ : Context n}
   {ty : Ty}
   (env : Env Γ)
   (expr : Expr Γ ty)
@@ -128,6 +146,26 @@ def eval
       let arg' := eval env arg
       let .closure clEnv body := eval env fn
       eval (.cons arg' clEnv) body
+  termination_by env.size + sizeOf expr
+  decreasing_by
+    sorry
+    sorry
+    sorry
+    sorry
 
--- val < max expr env.succ
--- env ≤ expr
+
+-- H1: size arg' < arg
+-- H2: size clEnv + size body < size env + size fn
+-- -------
+-- size arg' + size clEnv + size body < size env + size fn + size arg + 1
+--
+--
+-- 1. simplify arg' arg by H1
+-- 2. new goal: size clEnv + size body < size env + size fn + 1
+-- 3. simplify using H2
+-- 4. new goal: 0 < 1
+
+def evalTop
+  {ty : Ty}
+  (expr : Expr .nil ty)
+  : Val ty := eval .nil expr
