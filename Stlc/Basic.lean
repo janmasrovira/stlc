@@ -113,11 +113,11 @@ def Env.get
     | 0, (.cons v _) => p ▸ v
     | .succ m, (.cons _ env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
 
-
+@[reducible]
 def Expr.size (expr :  Expr Γ t) : Nat := match expr with
   | .zero => 1
   | .suc e => e.size.succ
-  | .app l r => l.size + r.size
+  | .app l r => l.size + r.size |>.succ
   | .var _ => 1
   | .lam l => l.size.succ
 
@@ -146,12 +146,15 @@ def eval
       let arg' := eval env arg
       let .closure clEnv body := eval env fn
       eval (.cons arg' clEnv) body
-  termination_by env.size + sizeOf expr
-  decreasing_by
-    sorry
-    sorry
-    sorry
-    sorry
+  -- termination_by env.size + expr.size
+  -- decreasing_by
+  --   simp
+  --   simp
+  --   omega
+  --   simp
+  --   omega
+  --   --- hard goal
+  --   simp
 
 
 -- H1: size arg' < arg
