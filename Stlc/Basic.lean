@@ -17,7 +17,6 @@ notation "⟦" t "⟧" => interp t
 
 abbrev Context : Type := List Ty
 
-
 namespace Context
 
 @[simp]
@@ -32,8 +31,12 @@ def get (ctx : Context) (ix : Fin ctx.length) : Ty :=
   | .zero, .cons x _ => x
   | .succ k, .cons _ xs => get xs ⟨k, by simp at p; omega⟩
 
-def get_congr {ctx ctx' : Context} (eq : ctx = ctx') (ix : Fin ctx.length) :
-  ctx.get ix = ctx'.get ⟨ix.val, by cases eq; exact ix.isLt⟩ := sorry
+def get_congr {ctx ctx' : Context} (ectx : ctx = ctx') (ix : Fin ctx.length) :
+  ctx.get ix = ctx'.get ⟨ix.val, by cases ectx; exact ix.isLt⟩ := by
+  cases ectx; rfl
+
+def get_succ {ty : Ty} (ctx : Context) (ix : Nat) (prf : ix < ctx.length) :
+  (ty ▹ ctx).get ⟨ix.succ, by simp; omega⟩ = ctx.get ⟨ix, prf⟩ := by rfl
 
 def get_concat_l
   (Δ Γ : Context)
@@ -71,7 +74,23 @@ def get_concat_r2
   (p : Δ.length <= ix)
   (u : ix < Γ.length + Δ.length)
   : (Δ ++ Ε ++ Γ).get ⟨ix + Ε.length, by simp; omega⟩ = (Δ ++ Γ).get ⟨ix, by simp; omega⟩ :=
-  by sorry
+  by
+  induction Δ generalizing ix
+  case nil =>
+    induction Ε
+    case nil => simp
+    case cons eh el ih => simp at ih; simpa
+  case cons t Δ' ih =>
+    let .succ ix' := ix
+    simp at u
+    simp at p
+    replace ih := ih ix' (by assumption) (by omega)
+    simp
+    have wtf : get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + 1 + List.length Ε, by simp; omega⟩ =
+               get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + (List.length Ε).succ, by simp; omega⟩
+        := by grind only
+    rw [wtf]
+    simpa
 
 def get_concat_m
   (Δ Γ : Context)
