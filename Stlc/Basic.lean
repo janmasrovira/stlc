@@ -15,37 +15,35 @@ abbrev interp : Ty → Type := fun
 
 notation "⟦" t "⟧" => interp t
 
-inductive Context : Nat → Type where
-  | nil : Context 0
-  | cons : {n : Nat} → Ty → Context n → Context (n + 1)
+abbrev Context : Type := List Ty
+
 
 namespace Context
+
+@[simp]
+def cons (ty : Ty) (ctx : Context) : Context := List.cons ty ctx
 
 infixr:67 " ▹ " => cons
 
 @[simp]
-def concat (Δ : Context n) (Γ : Context m) : Context (m + n) :=
-  match Δ with
-  | .nil => by simp; exact Γ
-  | .cons (n := k) ty as => .cons ty (concat as Γ)
-
-@[simp]
-def get (ctx : Context n) (ix : Fin n) : Ty :=
+def get (ctx : Context) (ix : Fin ctx.length) : Ty :=
   let ⟨m, p⟩ := ix
   match m, ctx with
   | .zero, .cons x _ => x
-  | .succ k, .cons _ xs => get xs ⟨k, by omega⟩
+  | .succ k, .cons _ xs => get xs ⟨k, by simp at p; omega⟩
+
+def get_congr {ctx ctx' : Context} (eq : ctx = ctx') (ix : Fin ctx.length) :
+  ctx.get ix = ctx'.get ⟨ix.val, by cases eq; exact ix.isLt⟩ := sorry
 
 def get_concat_l
-  (Δ : Context n)
-  (Γ : Context m)
-  (ix : Nat)
-  (p : ix < n)
-  : (Δ.concat Γ).get ⟨ix, by omega⟩ = Δ.get ⟨ix, p⟩ :=
+  (Δ Γ : Context)
+  {ix : Nat}
+  (p : ix < Δ.length)
+  : (Δ ++ Γ).get ⟨ix, by simp; omega⟩ = Δ.get ⟨ix, p⟩ :=
   by
   induction Δ generalizing ix
   case nil => contradiction
-  case cons k ty Δ' ih =>
+  case cons ih =>
    simp
    cases ix
    case zero => simp
@@ -53,98 +51,66 @@ def get_concat_l
 
 def get_concat_r
   (ix : Nat)
-  (Δ : Context n)
+  (Δ Γ : Context)
   (ty : Ty)
-  (Γ : Context m)
-  (p : n <= ix)
-  (u : ix < m + n)
-  : (Δ.concat (ty ▹ Γ)).get ⟨ix.succ, by omega⟩ = (Δ.concat Γ).get ⟨ix, by omega⟩ :=
+  (p : Δ.length <= ix)
+  (u : ix < Δ.length + Γ.length)
+  : (Δ ++ (ty ▹ Γ)).get ⟨ix.succ, by simp; omega⟩ = (Δ ++ Γ).get ⟨ix, by simp; omega⟩ :=
   by
   induction Δ generalizing ix
   case nil => rfl
   case cons n' t Δ' ih =>
     let .succ ix' := ix
-    apply ih ix' (by omega) (by omega)
-
-def help
-  {n m : Nat}
-  (Δ : Context n)
-  (eq : n = m)
-  : Context m := sorry
-
-def concat_assoc
-  {Δ : Context n}
-  {Ε : Context l}
-  {Γ : Context m}
-  : Δ.concat (Ε.concat Γ) = help ((Δ.concat Ε).concat Γ)
-    (by omega : m + (l + n) = m + l + n)
-  := by
-  induction Δ
-  simp
-  case cons t Δ' ih =>
-  simp
-  rw [ih]
-
+    simp at u
+    simp at p
+    apply ih ix' (by assumption) (by omega)
 
 def get_concat_r2
   (ix : Nat)
-  (Δ : Context n)
-  (Ε : Context l)
-  (Γ : Context m)
-  (p : n <= ix)
-  (u : ix < m + n)
-  : (Δ.concat (Ε.concat Γ)).get ⟨ix + l, by omega⟩ = (Δ.concat Γ).get ⟨ix, by omega⟩ :=
-  by
-  induction Δ generalizing ix
-  case nil => simp
-              sorry
-  case cons n' t Δ' ih =>
-    let .succ ix' := ix
-    sorry
+  (Δ Ε Γ : Context)
+  (p : Δ.length <= ix)
+  (u : ix < Γ.length + Δ.length)
+  : (Δ ++ Ε ++ Γ).get ⟨ix + Ε.length, by simp; omega⟩ = (Δ ++ Γ).get ⟨ix, by simp; omega⟩ :=
+  by sorry
 
 def get_concat_m
-  (Δ : Context n)
+  (Δ Γ : Context)
   (ty : Ty)
-  (Γ : Context m)
-  : (Δ.concat (ty ▹ Γ)).get ⟨n, by omega⟩ = ty :=
+  : (Δ ++ (ty ▹ Γ)).get ⟨Δ.length, by simp⟩ = ty :=
   by
   induction Δ
   case nil => rfl
   case cons Δ' ih => apply ih
 
-def toList : Context n → List Ty := fun
-  | nil => []
-  | cons ty t => ty :: toList t
-
 end Context
 
-structure Var {n : Nat} (Γ : Context n) (ty : Ty) : Type where
-  ix : Fin n
+structure Var (Γ : Context) (ty : Ty) : Type where
+  ix : Fin Γ.length
   tyProof : Γ.get ix = ty := by rfl
 
-inductive Expr : {n : Nat} → (Γ : Context n) → Ty → Type where
+inductive Expr : (Γ : Context) → Ty → Type where
   | lam
-    {Γ : Context n}
+    {Γ : Context}
     {varTy : Ty}
     {bodyTy : Ty}
     (body : Expr (varTy ▹ Γ) bodyTy)
     : Expr Γ (varTy ⟶ bodyTy)
   | var
-    {Γ : Context n}
+    {Γ : Context}
     {ty : Ty}
     (var : Var Γ ty)
     : Expr Γ ty
   | app
-    {Γ : Context n}
+    {Γ : Context}
     {l r : Ty}
     (fn : Expr Γ (l ⟶ r))
     (arg : Expr Γ l)
     : Expr Γ r
   | zero
-    {Γ : Context n}
+    {Γ : Context}
     : Expr Γ (.Nat)
   | suc
-    {Γ : Context n}
+    {Γ : Context}
     (num : Expr Γ .Nat)
     : Expr Γ .Nat
   -- | prec
@@ -160,16 +126,16 @@ mutual
 inductive Val : Ty → Type where
   | nat : Nat → Val .Nat
   | closure
-    {Γ : Context n}
+    {Γ : Context}
     (env : Env Γ)
     {varTy retTy : Ty}
     (body : Expr (varTy ▹ Γ) retTy)
     : Val (varTy ⟶ retTy)
 
-inductive Env : (Γ : Context n) → Type where
+inductive Env : (Γ : Context) → Type where
   | nil : Env .nil
   | cons
-    {Γ : Context n}
+    {Γ : Context}
     {ty : Ty}
     (val : Val ty)
     (env : Env Γ)
@@ -210,70 +176,72 @@ end
 
 def Expr.weaken
   {ty : Ty}
-  {Δ : Context n}
-  {Ε : Context l}
-  {Γ : Context m}
-  (e : Expr (Δ.concat Γ) ty)
-  : Expr (Δ.concat (Ε.concat Γ)) ty := match e with
+  {Δ Ε Γ : Context}
+  (e : Expr (Δ ++ Γ) ty)
+  : Expr (Δ ++ Ε ++ Γ) ty := match e with
   | .zero => .zero
   | .suc n => .suc n.weaken
   | .app l r => .app l.weaken r.weaken
   | .lam (varTy := vt) (bodyTy := bodyTy) b => .lam (b.weaken (Δ := vt ▹ Δ) (Γ := Γ))
   | .var ⟨⟨k, u⟩, p⟩ => by
         apply Expr.var
-        by_cases cmp : k < n
+        by_cases cmp : k < Δ.length
         case pos =>
-          refine ⟨⟨k, by omega⟩, ?_⟩
-          rw [Context.get_concat_l (p := cmp)]
+          refine ⟨⟨k, by simp; omega⟩, ?_⟩
+          rw [Context.get_congr (List.append_assoc Δ Ε Γ) ⟨k, by simp; omega⟩]
+          rw [Context.get_concat_l Δ (Ε ++ Γ) (by simp; omega)]
           rw [Context.get_concat_l (p := cmp )] at p
           assumption
         case neg =>
-          have cmp : n <= k := by omega
-          refine ⟨⟨k + l, by omega⟩, ?_⟩
-          rw [Context.get_concat_r2]
+          have cmp : Δ.length <= k := by omega
+          simp at u
+          refine ⟨⟨k + Ε.length, by simp; omega⟩, ?_⟩
+          rw [Context.get_concat_r2 k Δ Ε Γ]
           assumption
           assumption
+          omega
 
 def Expr.substH
   {l r : Ty}
-  {Δ : Context m}
-  {Γ : Context n}
-  (fn : Expr (Δ.concat (l ▹ Γ)) r)
+  {Δ Γ : Context}
+  (fn : Expr (Δ ++ (l ▹ Γ)) r)
   (arg : Expr Γ l)
-  : Expr (Δ.concat Γ) r := match fn with
+  : Expr (Δ ++ Γ) r := match fn with
   | .zero => .zero
   | .suc n => n.substH arg
   | .app f x => .app (f.substH arg) (x.substH arg)
   | .lam (varTy := varTy) (bodyTy := bodyTy) body => .lam (body.substH (Δ := varTy ▹ Δ) arg)
   | .var var@⟨⟨k, u⟩, p⟩ => by
-    by_cases h : k < m
+    by_cases h : k < Δ.length
     case pos =>
-      have h1 := Context.get_concat_l Δ Γ k h
-      have h2 := Context.get_concat_l Δ (l ▹ Γ) k h
-      refine (.var ⟨⟨k , by omega⟩ , ?_⟩)
-      simpa [h1, h2] using p
+      have h1 := Context.get_concat_l Δ Γ h
+      have h2 := Context.get_concat_l Δ (l ▹ Γ) h
+      refine (.var ⟨⟨k , by simp; omega⟩ , ?_⟩)
+      rw [h1, ←h2, p]
     case neg =>
-      by_cases h2 : k = m
+      by_cases h2 : k = Δ.length
       case pos =>
         subst h2
-        have h1 := Context.get_concat_m Δ l Γ
+        have h1 := Context.get_concat_m Δ Γ l
         rw [p] at h1
         rw [h1]
         exact (arg.weaken (Δ := .nil))
       case neg =>
-        have h1 : k > m := by omega
+        have h1 : k > Δ.length := by omega
         let .succ ks := k
-        refine (.var ⟨⟨ks, by omega⟩, ?_⟩)
-        simpa [Context.get_concat_r ks Δ l Γ (by omega) (by omega)] using p
+        simp at u
+        refine (.var ⟨⟨ks, by simp; omega⟩, ?_⟩)
+        rw [← Context.get_concat_r ks Δ Γ l (by omega) (by omega)]
+        assumption
 
 def Expr.subst
   {l r : Ty}
-  {Γ : Context n}
+  {Γ : Context}
   (fn : Expr (l ▹ Γ) r)
   (arg : Expr Γ l)
   : Expr Γ r := Expr.substH (Δ := .nil) fn arg
 
-inductive Equiv (Γ : Context n) : {ty : Ty} → (e1 e2 : Expr Γ ty) → Type where
+inductive Equiv (Γ : Context) : {ty : Ty} → (e1 e2 : Expr Γ ty) → Type where
   | refl : {e : Expr Γ ty} → Equiv Γ e e
   | βreduction (body : Expr (α ▹ Γ) γ) (arg : Expr Γ α)
           : Equiv Γ (.app (.lam body) arg) (body.subst arg)
