@@ -5,7 +5,7 @@ inductive Ty : Type where
   | Fn : Ty → Ty → Ty
   | Nat : Ty
 
-variable (ty : Ty)
+variable {ty : Ty}
 
 infixr:0 " ⟶ " => Ty.Fn
 
@@ -21,20 +21,100 @@ inductive Context : Nat → Type where
 
 namespace Context
 
+infixr:67 " ▹ " => cons
+
+@[simp]
+def concat (Δ : Context n) (Γ : Context m) : Context (m + n) :=
+  match Δ with
+  | .nil => by simp; exact Γ
+  | .cons (n := k) ty as => .cons ty (concat as Γ)
+
+@[simp]
 def get (ctx : Context n) (ix : Fin n) : Ty :=
   let ⟨m, p⟩ := ix
-  match ctx with
-  | nil => by contradiction
-  | cons x xs =>
-     match m with
-     | .zero => x
-     | .succ k => get xs ⟨k, by omega⟩
+  match m, ctx with
+  | .zero, .cons x _ => x
+  | .succ k, .cons _ xs => get xs ⟨k, by omega⟩
+
+def get_concat_l
+  (Δ : Context n)
+  (Γ : Context m)
+  (ix : Nat)
+  (p : ix < n)
+  : (Δ.concat Γ).get ⟨ix, by omega⟩ = Δ.get ⟨ix, p⟩ :=
+  by
+  induction Δ generalizing ix
+  case nil => contradiction
+  case cons k ty Δ' ih =>
+   simp
+   cases ix
+   case zero => simp
+   case succ i => apply ih
+
+def get_concat_r
+  (ix : Nat)
+  (Δ : Context n)
+  (ty : Ty)
+  (Γ : Context m)
+  (p : n <= ix)
+  (u : ix < m + n)
+  : (Δ.concat (ty ▹ Γ)).get ⟨ix.succ, by omega⟩ = (Δ.concat Γ).get ⟨ix, by omega⟩ :=
+  by
+  induction Δ generalizing ix
+  case nil => rfl
+  case cons n' t Δ' ih =>
+    let .succ ix' := ix
+    apply ih ix' (by omega) (by omega)
+
+def help
+  {n m : Nat}
+  (Δ : Context n)
+  (eq : n = m)
+  : Context m := sorry
+
+def concat_assoc
+  {Δ : Context n}
+  {Ε : Context l}
+  {Γ : Context m}
+  : Δ.concat (Ε.concat Γ) = help ((Δ.concat Ε).concat Γ)
+    (by omega : m + (l + n) = m + l + n)
+  := by
+  induction Δ
+  simp
+  case cons t Δ' ih =>
+  simp
+  rw [ih]
+
+
+def get_concat_r2
+  (ix : Nat)
+  (Δ : Context n)
+  (Ε : Context l)
+  (Γ : Context m)
+  (p : n <= ix)
+  (u : ix < m + n)
+  : (Δ.concat (Ε.concat Γ)).get ⟨ix + l, by omega⟩ = (Δ.concat Γ).get ⟨ix, by omega⟩ :=
+  by
+  induction Δ generalizing ix
+  case nil => simp
+              sorry
+  case cons n' t Δ' ih =>
+    let .succ ix' := ix
+    sorry
+
+def get_concat_m
+  (Δ : Context n)
+  (ty : Ty)
+  (Γ : Context m)
+  : (Δ.concat (ty ▹ Γ)).get ⟨n, by omega⟩ = ty :=
+  by
+  induction Δ
+  case nil => rfl
+  case cons Δ' ih => apply ih
 
 def toList : Context n → List Ty := fun
   | nil => []
   | cons ty t => ty :: toList t
-
-infixr:67 " ▹ " => cons
 
 end Context
 
@@ -106,12 +186,9 @@ def Env.get
   (var : Var Γ ty)
   : Val ty :=
   let ⟨⟨ix, l⟩, p⟩ := var
-  match Γ with
-  | .nil => by contradiction
-  | .cons t ctx =>
-    match ix, env with
-    | 0, (.cons v _) => p ▸ v
-    | .succ m, (.cons _ env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
+  match ix, env with
+  | 0, (.cons v _) => p ▸ v
+  | .succ m, (.cons _ env) => env.get ⟨⟨m, Nat.succ_lt_succ_iff.mp l⟩, by simpa using p⟩
 
 @[reducible]
 def Expr.size (expr :  Expr Γ t) : Nat := match expr with
@@ -131,6 +208,76 @@ def Env.size (env : Env Γ) : Nat := match env with
   | .cons v e => v.size + e.size
 end
 
+def Expr.weaken
+  {ty : Ty}
+  {Δ : Context n}
+  {Ε : Context l}
+  {Γ : Context m}
+  (e : Expr (Δ.concat Γ) ty)
+  : Expr (Δ.concat (Ε.concat Γ)) ty := match e with
+  | .zero => .zero
+  | .suc n => .suc n.weaken
+  | .app l r => .app l.weaken r.weaken
+  | .lam (varTy := vt) (bodyTy := bodyTy) b => .lam (b.weaken (Δ := vt ▹ Δ) (Γ := Γ))
+  | .var ⟨⟨k, u⟩, p⟩ => by
+        apply Expr.var
+        by_cases cmp : k < n
+        case pos =>
+          refine ⟨⟨k, by omega⟩, ?_⟩
+          rw [Context.get_concat_l (p := cmp)]
+          rw [Context.get_concat_l (p := cmp )] at p
+          assumption
+        case neg =>
+          have cmp : n <= k := by omega
+          refine ⟨⟨k + l, by omega⟩, ?_⟩
+          rw [Context.get_concat_r2]
+          assumption
+          assumption
+
+def Expr.substH
+  {l r : Ty}
+  {Δ : Context m}
+  {Γ : Context n}
+  (fn : Expr (Δ.concat (l ▹ Γ)) r)
+  (arg : Expr Γ l)
+  : Expr (Δ.concat Γ) r := match fn with
+  | .zero => .zero
+  | .suc n => n.substH arg
+  | .app f x => .app (f.substH arg) (x.substH arg)
+  | .lam (varTy := varTy) (bodyTy := bodyTy) body => .lam (body.substH (Δ := varTy ▹ Δ) arg)
+  | .var var@⟨⟨k, u⟩, p⟩ => by
+    by_cases h : k < m
+    case pos =>
+      have h1 := Context.get_concat_l Δ Γ k h
+      have h2 := Context.get_concat_l Δ (l ▹ Γ) k h
+      refine (.var ⟨⟨k , by omega⟩ , ?_⟩)
+      simpa [h1, h2] using p
+    case neg =>
+      by_cases h2 : k = m
+      case pos =>
+        subst h2
+        have h1 := Context.get_concat_m Δ l Γ
+        rw [p] at h1
+        rw [h1]
+        exact (arg.weaken (Δ := .nil))
+      case neg =>
+        have h1 : k > m := by omega
+        let .succ ks := k
+        refine (.var ⟨⟨ks, by omega⟩, ?_⟩)
+        simpa [Context.get_concat_r ks Δ l Γ (by omega) (by omega)] using p
+
+def Expr.subst
+  {l r : Ty}
+  {Γ : Context n}
+  (fn : Expr (l ▹ Γ) r)
+  (arg : Expr Γ l)
+  : Expr Γ r := Expr.substH (Δ := .nil) fn arg
+
+inductive Equiv (Γ : Context n) : {ty : Ty} → (e1 e2 : Expr Γ ty) → Type where
+  | refl : {e : Expr Γ ty} → Equiv Γ e e
+  | βreduction (body : Expr (α ▹ Γ) γ) (arg : Expr Γ α)
+          : Equiv Γ (.app (.lam body) arg) (body.subst arg)
+
 def eval
   {ty : Ty}
   (env : Env Γ)
@@ -146,27 +293,8 @@ def eval
       let arg' := eval env arg
       let .closure clEnv body := eval env fn
       eval (.cons arg' clEnv) body
-  -- termination_by env.size + expr.size
-  -- decreasing_by
-  --   simp
-  --   simp
-  --   omega
-  --   simp
-  --   omega
-  --   --- hard goal
-  --   simp
-
-
--- H1: size arg' < arg
--- H2: size clEnv + size body < size env + size fn
--- -------
--- size arg' + size clEnv + size body < size env + size fn + size arg + 1
---
---
--- 1. simplify arg' arg by H1
--- 2. new goal: size clEnv + size body < size env + size fn + 1
--- 3. simplify using H2
--- 4. new goal: 0 < 1
+  termination_by 0
+  decreasing_by repeat sorry
 
 def evalTop
   {ty : Ty}
