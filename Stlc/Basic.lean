@@ -68,6 +68,11 @@ def get_concat_r
     simp at p
     apply ih ix' (by assumption) (by omega)
 
+theorem Fin.fun_eq_of_val {n : Nat} {Res : Type} (f : Fin n → Res) (i j : Fin n) (e : i.val = j.val) : f i = f j := by
+  have Eq.rfl := Fin.eq_of_val_eq e
+  subst_eqs
+  exact rfl
+
 def get_concat_r2
   (ix : Nat)
   (Δ Ε Γ : Context)
@@ -82,15 +87,12 @@ def get_concat_r2
     case cons eh el ih => simp at ih; simpa
   case cons t Δ' ih =>
     let .succ ix' := ix
-    simp at u
-    simp at p
+    simp at u; simp at p; simp
     replace ih := ih ix' (by assumption) (by omega)
-    simp
     have wtf : get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + 1 + List.length Ε, by simp; omega⟩ =
                get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + (List.length Ε).succ, by simp; omega⟩
-        := by grind only
-    rw [wtf]
-    simpa
+        := by apply Fin.fun_eq_of_val; simp; omega
+    simpa [wtf]
 
 def get_concat_m
   (Δ Γ : Context)
