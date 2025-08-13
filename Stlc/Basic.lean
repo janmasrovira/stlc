@@ -300,11 +300,17 @@ theorem βsteps.singleton {ty : Ty} {a b : Expr Γ ty} : βstep a b → βsteps 
   intro x; constructor; apply x; constructor
 
 theorem βsteps.lam {l r : Ty} {a b : Expr (l ▹ Γ) r} : βsteps a b → βsteps a.lam b.lam := by
-  intro f; induction f
-  constructor
-  case cons x y z t1 t2 t3 =>
-    sorry
+  intro f; induction f; constructor
+  case cons t1 t2 t3 => constructor; apply βstep.lam; assumption; assumption
 
+theorem βsteps.appr {l r : Ty} {fn : Expr Γ (l ⟶ r)} {arg arg' : Expr Γ l}
+  : βsteps arg arg' → βsteps (.app fn arg) (.app fn arg') := by
+  intro f; induction f; constructor
+  case cons t1 t2 t3 => constructor; apply βstep.appr; assumption; assumption
+
+theorem βsteps.suc {n n' : Expr Γ .Nat} : βsteps n n' → βsteps n.suc n'.suc := by
+  intro f; induction f; constructor
+  case cons t1 t2 t3 => constructor; apply βstep.suc; assumption; assumption
 
 -- strong normalization
 @[simp]
@@ -324,13 +330,16 @@ theorem βsteps_normalize
   (e : Expr Γ ty)
   : βsteps e e.normalize := by
   induction e
-  case lam body ih =>
-    -- body ih-> body.normalize ->
+  case lam body ih => simp; exact βsteps.lam ih
+  case var => constructor
+  case zero => constructor
+  case suc p => exact βsteps.suc p
+  case app fn arg bfn barg =>
     simp
-
-
-
-
+    cases fn.normalize <;> simp
+    case var v => apply (βsteps.appr barg)
+    case app wut => exact βsteps.appr barg
+    case lam body => sorry
 
 theorem progress (e : Expr Γ ty) : IsValue e ∨ ∃ e' : Expr Γ ty, βsteps e e' := sorry
 
