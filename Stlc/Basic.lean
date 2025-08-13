@@ -89,10 +89,10 @@ def get_concat_r2
     let .succ ix' := ix
     simp at u; simp at p; simp
     replace ih := ih ix' (by assumption) (by omega)
-    have wtf : get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + 1 + List.length Ε, by simp; omega⟩ =
+    have lem : get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + 1 + List.length Ε, by simp; omega⟩ =
                get (t :: (Δ' ++ Ε ++ Γ)) ⟨ix' + (List.length Ε).succ, by simp; omega⟩
         := by apply Fin.fun_eq_of_val; simp; omega
-    simpa [wtf]
+    simpa [lem]
 
 def get_concat_m
   (Δ Γ : Context)
@@ -262,10 +262,77 @@ def Expr.subst
   (arg : Expr Γ l)
   : Expr Γ r := Expr.substH (Δ := .nil) fn arg
 
-inductive Equiv (Γ : Context) : {ty : Ty} → (e1 e2 : Expr Γ ty) → Type where
-  | refl : {e : Expr Γ ty} → Equiv Γ e e
-  | βreduction (body : Expr (α ▹ Γ) γ) (arg : Expr Γ α)
-          : Equiv Γ (.app (.lam body) arg) (body.subst arg)
+inductive IsValue : {Γ : Context} → {ty : Ty} → (e : Expr Γ ty) → Prop where
+  | zero : IsValue .zero
+  | suc {n : Expr Γ .Nat} : IsValue n → IsValue (.suc n)
+  | lam {l r : Ty} {body : Expr (l ▹ Γ) r} : IsValue body → IsValue (.lam body)
+
+def Expr.isValue {Γ : Context} {ty : Ty} (e : Expr Γ ty) : Decidable (IsValue e) :=
+  match e with
+  | .var .. => isFalse (by intro x; cases x)
+  | .app .. => isFalse (by intro x; cases x)
+  | .zero => isTrue .zero
+  | .suc n => match n.isValue with
+              | isFalse p => isFalse (by intro x; cases x; contradiction)
+              | isTrue p => isTrue (.suc p)
+  | .lam b => match b.isValue with
+              | isFalse p => isFalse (by intro x; cases x; contradiction)
+              | isTrue p => isTrue (.lam p)
+
+-- exactly 1 β-reduction step
+inductive βstep : {Γ : Context} → {ty : Ty} → (e1 e2 : Expr Γ ty) → Prop where
+  | βreduction {Γ : Context} {l r : Ty} (body : Expr (l ▹ Γ) r) (arg : Expr Γ l) : βstep (.app (.lam body) arg) (body.subst arg)
+  | suc {Γ : Context} (n n' : Expr Γ .Nat) : βstep n n' → βstep n.suc n'.suc
+  | appl {Γ : Context} {l r : Ty} (fn fn' : Expr Γ (l ⟶ r)) (arg : Expr Γ l) : βstep fn fn' → βstep (.app fn arg) (.app fn' arg)
+  | appr {Γ : Context} {l r : Ty} (fn : Expr Γ (l ⟶ r)) {arg arg' : Expr Γ l} : βstep arg arg' → βstep (.app fn arg) (.app fn arg')
+  | lam {Γ : Context} {l : Ty} {body body' : Expr (l ▹ Γ) r} : βstep body body' → βstep (.lam body) (.lam body')
+
+-- zero or more β-reduction steps
+inductive βsteps {Γ : Context} : {ty : Ty} → (e1 e2 : Expr Γ ty) → Prop where
+  | rfl {ty : Ty} {a : Expr Γ ty} : βsteps a a
+  | cons {ty : Ty} {a b c : Expr Γ ty} : βstep a b → βsteps b c → βsteps a c
+
+theorem βsteps.trans : βsteps a b → βsteps b c → βsteps a c := by
+  intro l r; induction l; assumption
+  case cons ab bc ih => exact cons ab (ih r)
+
+theorem βsteps.singleton {ty : Ty} {a b : Expr Γ ty} : βstep a b → βsteps a b := by
+  intro x; constructor; apply x; constructor
+
+theorem βsteps.lam {l r : Ty} {a b : Expr (l ▹ Γ) r} : βsteps a b → βsteps a.lam b.lam := by
+  intro f; induction f
+  constructor
+  case cons x y z t1 t2 t3 =>
+    sorry
+
+
+-- strong normalization
+@[simp]
+def Expr.normalize {Γ : Context} {ty : Ty} (e : Expr Γ ty) : Expr Γ ty :=
+  match e with
+  | .zero => .zero
+  | .suc n => .suc n.normalize
+  | .lam b => .lam b.normalize
+  | .var v => .var v
+  | .app l r => match l.normalize with
+                | .lam b => b.subst r.normalize
+                | _ => .app l r.normalize
+
+theorem βsteps_normalize
+  {Γ : Context}
+  {ty : Ty}
+  (e : Expr Γ ty)
+  : βsteps e e.normalize := by
+  induction e
+  case lam body ih =>
+    -- body ih-> body.normalize ->
+    simp
+
+
+
+
+
+theorem progress (e : Expr Γ ty) : IsValue e ∨ ∃ e' : Expr Γ ty, βsteps e e' := sorry
 
 def eval
   {ty : Ty}
