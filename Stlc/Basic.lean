@@ -324,6 +324,23 @@ def Expr.normalize {Γ : Context} {ty : Ty} (e : Expr Γ ty) : Expr Γ ty :=
                 | .lam b => b.subst r.normalize
                 | _ => .app l r.normalize
 
+-- bfn : βsteps fn fn.normalize
+-- barg : βsteps arg arg.normalize
+-- body : Expr (l ▹ Γ) r
+-- c : fn.normalize = body.lam
+-- ⊢ βsteps (fn.app arg) (body.subst arg.normalize)
+
+theorem βsteps_subst
+  {Δ Γ : Context}
+  {l r : Ty}
+  {body : Expr (l ▹ Γ) r}
+  {fn : Expr Γ (l ⟶ r)}
+  {arg arg' : Expr Γ l}
+  (pfn : βsteps fn body.lam)
+  (parg : βsteps arg arg')
+  : βsteps (.app fn arg) (body.subst arg') := by
+
+
 theorem βsteps_normalize
   {Γ : Context}
   {ty : Ty}
@@ -336,10 +353,11 @@ theorem βsteps_normalize
   case suc p => exact βsteps.suc p
   case app fn arg bfn barg =>
     simp
-    cases fn.normalize <;> simp
+    cases c : fn.normalize <;> simp
     case var v => apply (βsteps.appr barg)
     case app wut => exact βsteps.appr barg
-    case lam body => sorry
+    case lam body =>
+      -- βsetps (app fn arg) (body)
 
 theorem progress (e : Expr Γ ty) : IsValue e ∨ ∃ e' : Expr Γ ty, βsteps e e' := sorry
 
