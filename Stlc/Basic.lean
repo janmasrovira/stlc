@@ -296,12 +296,20 @@ theorem βsteps.trans : βsteps a b → βsteps b c → βsteps a c := by
   intro l r; induction l; assumption
   case cons ab bc ih => exact cons ab (ih r)
 
+instance {Γ : Context} {ty : Ty} : Trans (βsteps (Γ := Γ) (ty := ty)) βsteps βsteps where
+  trans := βsteps.trans
+
 theorem βsteps.singleton {ty : Ty} {a b : Expr Γ ty} : βstep a b → βsteps a b := by
   intro x; constructor; apply x; constructor
 
 theorem βsteps.lam {l r : Ty} {a b : Expr (l ▹ Γ) r} : βsteps a b → βsteps a.lam b.lam := by
   intro f; induction f; constructor
   case cons t1 t2 t3 => constructor; apply βstep.lam; assumption; assumption
+
+theorem βsteps.appl {l r : Ty} {fn fn' : Expr Γ (l ⟶ r)} {arg : Expr Γ l}
+  : βsteps fn fn' → βsteps (.app fn arg) (.app fn' arg) := by
+  intro f; induction f; constructor
+  case cons t1 t2 t3 => constructor; apply βstep.appl; assumption; assumption
 
 theorem βsteps.appr {l r : Ty} {fn : Expr Γ (l ⟶ r)} {arg arg' : Expr Γ l}
   : βsteps arg arg' → βsteps (.app fn arg) (.app fn arg') := by
@@ -324,23 +332,6 @@ def Expr.normalize {Γ : Context} {ty : Ty} (e : Expr Γ ty) : Expr Γ ty :=
                 | .lam b => b.subst r.normalize
                 | _ => .app l r.normalize
 
--- bfn : βsteps fn fn.normalize
--- barg : βsteps arg arg.normalize
--- body : Expr (l ▹ Γ) r
--- c : fn.normalize = body.lam
--- ⊢ βsteps (fn.app arg) (body.subst arg.normalize)
-
-theorem βsteps_subst
-  {Δ Γ : Context}
-  {l r : Ty}
-  {body : Expr (l ▹ Γ) r}
-  {fn : Expr Γ (l ⟶ r)}
-  {arg arg' : Expr Γ l}
-  (pfn : βsteps fn body.lam)
-  (parg : βsteps arg arg')
-  : βsteps (.app fn arg) (body.subst arg') := by
-
-
 theorem βsteps_normalize
   {Γ : Context}
   {ty : Ty}
@@ -357,7 +348,12 @@ theorem βsteps_normalize
     case var v => apply (βsteps.appr barg)
     case app wut => exact βsteps.appr barg
     case lam body =>
-      -- βsetps (app fn arg) (body)
+     calc βsteps (.app fn arg) (.app fn.normalize arg) := βsteps.appl bfn
+          βsteps (.app fn.normalize arg) (.app fn.normalize arg.normalize) := βsteps.appr barg
+          βsteps (.app fn.normalize arg.normalize) (.app (.lam body) arg.normalize) := by rw[c]; constructor
+          βsteps (.app (.lam body) arg.normalize) (body.subst arg.normalize) := by
+            apply βsteps.singleton
+            exact βstep.βreduction body arg.normalize
 
 theorem progress (e : Expr Γ ty) : IsValue e ∨ ∃ e' : Expr Γ ty, βsteps e e' := sorry
 
