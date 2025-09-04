@@ -141,6 +141,8 @@ inductive Expr : (Γ : Context) → Ty → Type where
   --   (s : Expr Γ (.Nat ⟶ ty ⟶ ty))
   --   (m : Expr Γ .Nat)
   --   : Expr Γ ty
+  --
+attribute [pp_nodot] Expr.app Expr.lam
 
 mutual
 
@@ -329,8 +331,8 @@ def Expr.normalize {Γ : Context} {ty : Ty} (e : Expr Γ ty) : Expr Γ ty :=
   | .lam b => .lam b.normalize
   | .var v => .var v
   | .app l r => match l.normalize with
-                | .lam b => b.subst r.normalize
-                | _ => .app l r.normalize
+                | .lam b => b.subst r.normalize -- FIXME
+                | l' => .app l' r.normalize
 
 theorem βsteps_normalize
   {Γ : Context}
@@ -344,9 +346,22 @@ theorem βsteps_normalize
   case suc p => exact βsteps.suc p
   case app fn arg bfn barg =>
     simp
-    cases c : fn.normalize <;> simp
-    case var v => apply (βsteps.appr barg)
-    case app wut => exact βsteps.appr barg
+    cases c : fn.normalize
+    case var v =>
+      simp
+      calc βsteps (.app fn arg) (.app fn.normalize arg) := βsteps.appl bfn
+           βsteps _ (.app fn.normalize arg.normalize) := βsteps.appr barg
+           βsteps _ (Expr.app (Expr.var v) arg.normalize) := by
+             rw [c]
+             exact βsteps.rfl
+    case app r l =>
+      simp
+      calc βsteps (Expr.app fn arg) (Expr.app fn.normalize arg) := βsteps.appl bfn
+           βsteps _ (Expr.app fn.normalize arg.normalize) := βsteps.appr barg
+           βsteps _ (Expr.app (Expr.app l r) arg.normalize) := by
+             rw[c]
+             exact βsteps.rfl
+
     case lam body =>
      calc βsteps (.app fn arg) (.app fn.normalize arg) := βsteps.appl bfn
           βsteps (.app fn.normalize arg) (.app fn.normalize arg.normalize) := βsteps.appr barg
@@ -355,27 +370,34 @@ theorem βsteps_normalize
             apply βsteps.singleton
             exact βstep.βreduction body arg.normalize
 
-theorem progress (e : Expr Γ ty) : IsValue e ∨ ∃ e' : Expr Γ ty, βsteps e e' := sorry
+def IsNormalForm {Γ : Context} {ty : Ty} (expr : Expr Γ ty) : Prop
+  := ∀ e : Expr Γ ty, ¬ βstep expr e
 
-def eval
+theorem normalize_is_normal_form
+  {Γ : Context}
   {ty : Ty}
-  (env : Env Γ)
-  (expr : Expr Γ ty)
-  : Val ty :=
-  match expr with
-  | .zero => .nat 0
-  | .suc e => let .nat m := eval env e
-              .nat (m + 1)
-  | .lam body => .closure env body
-  | .var v => env.get v
-  | .app (l := l) (r := r) (fn : Expr Γ (l ⟶ r)) arg =>
-      let arg' := eval env arg
-      let .closure clEnv body := eval env fn
-      eval (.cons arg' clEnv) body
-  termination_by 0
-  decreasing_by repeat sorry
+  (e : Expr Γ ty)
+  : IsNormalForm e.normalize := by
+  intro e' p
+  induction e
+  case lam l r body ih =>
+    cases p; case lam body' ih2 => exact ih body' ih2
+  case var => cases p
+  case zero => cases p
+  case suc =>
+    cases p; case suc n step ih => exact n step ih
+  case app fn arg ih1 ih2 =>
+    simp at p
+    cases eq : fn.normalize
+    case lam =>
+      simp [eq] at p
+      rw [eq] at ih1
 
-def evalTop
-  {ty : Ty}
-  (expr : Expr .nil ty)
-  : Val ty := eval .nil expr
+    iterate 2 {
+      rw [eq] at p
+      rw [eq] at ih1
+      simp at p
+      cases p
+      case appl a f step => exact ih1 f step
+      case appr a f step => exact ih2 f step
+    }
